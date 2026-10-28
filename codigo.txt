@@ -1,0 +1,543 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Reconocimiento de figuras geométricas como problema de busqueda.
+
+Implementa la formalizacion de las secciones 1-3:
+  - espacio de estados = interpretaciones parciales (rasgos medidos + hipotesis vivas)
+  - acciones = los 7 detectores
+  - prueba de objetivo = coincidencia de signatura dentro de tolerancia
+  - coste = 1 comparacion + MU por clase refutada
+  - algoritmos: coste uniforme (ciega), DFS con retroceso, A* (heuristica admisible), GA
+
+Uso:
+    python figuras.py                      # demo sintetica, todos los algoritmos
+    python figuras.py --algo astar --trials 200
+    python figuras.py --image foto.png     # percepcion real con OpenCV
+    python figuras.py --ga                 # evoluciona el orden de pruebas
+
+Dependencias: solo la stdlib. OpenCV es opcional y solo para --image.
+"""
+from __future__ import annotations
+
+import argparse
+import heapq
+import math
+import random
+import statistics
+import sys
+
+# --------------------------------------------------------------------------- #
+# 1. Dominio
+# --------------------------------------------------------------------------- #
+
+DETECTORES = ("n_vertices", "n_lados", "angulos", "simetrias",
+              "convexidad", "area", "perimetro")
+
+CIRCULO, CUADRADO, RECTANGULO = "circulo", "cuadrado", "rectangulo"
+TRAPECIO, PENTAGONO, ESTRELLA = "trapecio", "pentagono", "estrella"
+NULL = "NULL"
+FIGURAS = (CIRCULO, CUADRADO, RECTANGULO, TRAPECIO, PENTAGONO, ESTRELLA)
+CLASES = FIGURAS + (NULL,)
+
+MU = 2          # penalizacion por clase refutada
+PROF_MAX = len(DETECTORES)
+
+
+def _rango(lo, hi):
+    return lambda v: lo <= v <= hi
+
+
+# Signaturas: rasgo -> predicado de compatibilidad.
+# Solo se evaluan los rasgos efectivamente medidos.
+SIG = {
+    CIRCULO: {
+        "n_vertices": lambda v: v == 0,
+        "n_lados": lambda v: v == 1,
+        "convexidad": lambda v: v == 0,
+        "simetrias": _rango(8, 40),
+        "area": _rango(0.070, 0.095),          # A/P^2
+    },
+    CUADRADO: {
+        "n_vertices": lambda v: v == 4,
+        "n_lados": lambda v: v == 4,
+        "angulos": lambda a: max(a) - min(a) < 10,
+        "simetrias": _rango(3, 6),
+        "convexidad": lambda v: v == 0,
+        "area": _rango(0.050, 0.075),
+    },
+    RECTANGULO: {
+        "n_vertices": lambda v: v == 4,
+        "n_lados": lambda v: v == 4,
+        "angulos": lambda a: max(a) - min(a) < 10,
+        "simetrias": _rango(0, 3),
+        "convexidad": lambda v: v == 0,
+        "area": _rango(0.005, 0.050),
+    },
+    TRAPECIO: {
+        "n_vertices": lambda v: v == 4,
+        "n_lados": lambda v: v == 4,
+        "simetrias": _rango(0, 2),
+        "convexidad": lambda v: v == 0,
+    },
+    PENTAGONO: {
+        "n_vertices": lambda v: v == 5,
+        "n_lados": lambda v: v == 5,
+        "angulos": _rango(490, 590),
+        "simetrias": _rango(4, 7),
+        "convexidad": lambda v: v == 0,
+        "area": _rango(0.055, 0.085),
+    },
+    ESTRELLA: {
+        "n_vertices": lambda v: v == 10,
+        "n_lados": lambda v: v == 10,
+        "convexidad": lambda v: v == 1,
+        "simetrias": _rango(4, 7),
+    },
+    NULL: {},
+}
+
+# Catalogo de 10 rasgos del grafo de similitud (seccion 2) -> pesos de arista.
+_F10 = {
+    CIRCULO:    {1, 5, 7, 10},
+    CUADRADO:   {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+    TRAPECIO:   {1, 2, 3, 4, 5, 8, 9},
+    RECTANGULO: {1, 2, 3, 4, 5, 6, 7, 8, 9},
+    PENTAGONO:  {1, 2, 3, 4, 5, 6, 7, 8},
+    ESTRELLA:   {1, 2, 7, 9, 10},
+    NULL:       set(),
+}
+PESO = {(a, b): max(1, 10 - len(_F10[a] & _F10[b]))
+        for a in CLASES for b in CLASES if a != b}
+
+# --------------------------------------------------------------------------- #
+# 2. Estado
+# --------------------------------------------------------------------------- #
+
+
+class Estado:
+    __slots__ = ("rasgos", "C", "delta", "g", "padre", "accion")
+
+    def __init__(self, rasgos, C, delta, g=0, padre=None, accion=None):
+        self.rasgos = rasgos                  # tuple ordenada de (rasgo, valor)
+        self.C = C                            # frozenset de hipotesis vivas
+        self.delta = delta                    # frozenset de detectores aplicados
+        self.g = g
+        self.padre = padre
+        self.accion = accion
+
+    def clave(self):
+        return (self.rasgos, self.C, self.delta)
+
+    def __hash__(self):
+        return hash(self.clave())
+
+    def __eq__(self, otro):
+        return isinstance(otro, Estado) and self.clave() == otro.clave()
+
+    def get(self, nombre):
+        for k, v in self.rasgos:
+            if k == nombre:
+                return v
+        return None
+
+    def dict_rasgos(self):
+        return dict(self.rasgos)
+
+
+def compatible(clase, rasgos):
+    for k, pred in SIG[clase].items():
+        v = rasgos.get(k)
+        if v is not None and not pred(v):
+            return False
+    return True
+
+
+def es_meta(e):
+    for c in FIGURAS:
+        if c in e.C and all(k in e.rasgos_dict() for k in SIG[c]):
+            return c
+    if e.C == frozenset({NULL}):
+        return NULL
+    return None
+
+
+def h_rasgos(e):
+    """Rasgos pendientes de la clase mas cercana. Admisible: nunca sobreestima."""
+    vivos = e.C - {NULL}
+    if not vivos:
+        return 0
+    medidos = {k for k, _ in e.rasgos}
+    return min(len(set(SIG[c]) - medidos) for c in vivos)
+
+
+def h_grafo(e):
+    """Cota por la arista minima del grafo de similitud (desempate)."""
+    vivos = e.C
+    if len(vivos) < 2:
+        return 10
+    return min(PESO[(a, b)] for a in vivos for b in vivos if a != b)
+
+
+def sucesores(e, perc):
+    for d in DETECTORES:
+        if d in e.delta:
+            continue
+        valor = perc.medir(d)
+        rasgos = tuple(sorted(e.rasgos + ((d, valor),)))
+        d_rasgos = dict(rasgos)
+        nuevo_C = frozenset(c for c in e.C if compatible(c, d_rasgos))
+        refutadas = len(e.C) - len(nuevo_C)
+        yield Estado(rasgos, nuevo_C, e.delta | {d},
+                     e.g + 1 + MU * refutadas, e, d), refutadas
+
+
+# --------------------------------------------------------------------------- #
+# 3. Percepcion
+# --------------------------------------------------------------------------- #
+
+
+class PercepcionSintetica:
+    """Verdad de campo + ruido de medida. Reproduce el dominio sin imagen."""
+
+    CANON = {
+        CIRCULO:    dict(n_vertices=0,  n_lados=1,  angulos=(),             simetrias=12, convexidad=0, area=0.0796),
+        CUADRADO:   dict(n_vertices=4,  n_lados=4,  angulos=(90,)*4,        simetrias=4,  convexidad=0, area=0.0625),
+        RECTANGULO: dict(n_vertices=4,  n_lados=4,  angulos=(90,)*4,        simetrias=2,  convexidad=0, area=0.030),
+        TRAPECIO:   dict(n_vertices=4,  n_lados=4,  angulos=(75, 75, 105, 105), simetrias=1, convexidad=0, area=0.050),
+        PENTAGONO:  dict(n_vertices=5,  n_lados=5,  angulos=(108,)*5,       simetrias=5,  convexidad=0, area=0.069),
+        ESTRELLA:   dict(n_vertices=10, n_lados=10, angulos=(36, 216)*5,    simetrias=5,  convexidad=1, area=0.040),
+        NULL:       dict(n_vertices=7,  n_lados=9,  angulos=(50, 130, 60, 140), simetrias=2, convexidad=0, area=0.045),
+    }
+
+    def __init__(self, clase, ruido=0.10, rng=None):
+        self.base = dict(self.CANON[clase])
+        self.ruido = ruido
+        self.rng = rng or random.Random()
+        self.cache = {}
+
+    def medir(self, nombre):
+        if nombre in self.cache:
+            return self.cache[nombre]
+        v = self.base[nombre]
+        r = self.rng
+        if nombre == "angulos":
+            a = tuple(max(1.0, x + r.gauss(0, 6 * self.ruido)) for x in v) if v else ()
+            v = a
+        elif nombre in ("n_vertices", "n_lados", "convexidad"):
+            v = int(v)
+            if nombre != "convexidad" and r.random() < self.ruido:
+                v = max(0, v + r.choice((-1, 1)))
+        elif nombre == "simetrias":
+            v = max(0, int(round(v + r.gauss(0, 1.2 * self.ruido * 3))))
+        else:  # area
+            v = max(1e-4, v * (1 + r.gauss(0, 0.05 * self.ruido * 3)))
+        self.cache[nombre] = v
+        return v
+
+
+class PercepcionImagen:
+    """Detectores reales sobre un contorno con OpenCV."""
+
+    def __init__(self, ruta):
+        import cv2
+        import numpy as np
+        self.cv2, self.np = cv2, np
+        img = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            raise SystemExit(f"no se pudo leer {ruta}")
+        _, bw = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        if bw.mean() > 127:
+            bw = cv2.bitwise_not(bw)
+        cnts, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            raise SystemExit("no hay contornos")
+        self.bw = bw
+        self.c = max(cnts, key=cv2.contourArea)
+        self.per = max(cv2.arcLength(self.c, True), 1e-6)
+        self.area = cv2.contourArea(self.c)
+        self.circ = 4 * math.pi * self.area / (self.per ** 2)
+        self.cache = {}
+
+    def _simetrias(self):
+        cv2, np = self.cv2, self.np
+        h, w = self.bw.shape
+        m = np.zeros((h, w), np.uint8)
+        cv2.drawContours(m, [self.c], -1, 255, -1)
+        M = cv2.moments(self.c)
+        if M["m00"] == 0:
+            return 0
+        cx, cy = M["m10"] / M["m00"], M["m01"] / M["m00"]
+        T = np.float32([[1, 0, w / 2 - cx], [0, 1, h / 2 - cy]])
+        mc = cv2.warpAffine(m, T, (w, h))
+        picos = 0
+        for deg in range(0, 180, 5):
+            r1 = cv2.getRotationMatrix2D((w / 2, h / 2), deg, 1.0)
+            rot = cv2.warpAffine(mc, r1, (w, h))
+            flip = cv2.flip(rot, 1)
+            r2 = cv2.getRotationMatrix2D((w / 2, h / 2), -deg, 1.0)
+            back = cv2.warpAffine(flip, r2, (w, h))
+            inter = np.logical_and(back > 127, mc > 127).sum()
+            union = np.logical_or(back > 127, mc > 127).sum() + 1e-9
+            if inter / union > 0.90:
+                picos += 1
+        return picos
+
+    def medir(self, nombre):
+        cv2 = self.cv2
+        if nombre in self.cache:
+            return self.cache[nombre]
+        if nombre == "area":
+            v = self.area / (self.per ** 2)
+        elif nombre == "perimetro":
+            v = self.per
+        elif nombre == "convexidad":
+            v = 0 if cv2.isContourConvex(self.c) else 1
+        elif nombre == "simetrias":
+            v = self._simetrias()
+        elif nombre in ("n_vertices", "n_lados"):
+            if self.circ >= 0.88:
+                v = 0 if nombre == "n_vertices" else 1
+            else:
+                ap = cv2.approxPolyDP(self.c, 0.02 * self.per, True)
+                v = len(ap)
+        elif nombre == "angulos":
+            ap = cv2.approxPolyDP(self.c, 0.02 * self.per, True).reshape(-1, 2)
+            angs = []
+            n = len(ap)
+            for i in range(n):
+                a, b, c = ap[(i - 1) % n], ap[i], ap[(i + 1) % n]
+                v1, v2 = a - b, c - b
+                cos = float(v1.dot(v2)) / (float(self.np.linalg.norm(v1) *
+                                                 self.np.linalg.norm(v2)) + 1e-9)
+                angs.append(math.degrees(math.acos(max(-1.0, min(1.0, cos)))))
+            v = tuple(angs)
+        else:
+            v = 0
+        self.cache[nombre] = v
+        return v
+
+
+# --------------------------------------------------------------------------- #
+# 4. Algoritmos
+# --------------------------------------------------------------------------- #
+
+
+def _resultado(meta, mediciones, expandidos, camino):
+    return dict(exito=meta is not None, clase=meta, mediciones=mediciones,
+                expandidos=expandidos, camino=camino)
+
+
+def coste_uniforme(perc):
+    """Ciega con pesos (la unica ciega que respeta w)."""
+    raiz = Estado((), frozenset(CLASES), frozenset())
+    frontera = [(0, 0, raiz)]
+    contador, cerrados, med = 0, set(), 0
+    while frontera:
+        _, _, e = heapq.heappop(frontera)
+        if e in cerrados:
+            continue
+        cerrados.add(e)
+        m = es_meta(e)
+        if m:
+            return _resultado(m, med, len(cerrados), _camino(e))
+        for s, _ in sucesores(e, perc):
+            med += 1
+            if s.C and s not in cerrados:
+                contador += 1
+                heapq.heappush(frontera, (s.g, contador, s))
+    return _resultado(None, med, len(cerrados), [])
+
+
+def profundidad(perc, orden=None):
+    """DFS con retroceso por contradiccion."""
+    orden = orden or DETECTORES
+    raiz = Estado((), frozenset(CLASES), frozenset())
+    cerrados, med, caja = set(), [0], [None]
+
+    def dfs(e, prof):
+        if prof > PROF_MAX:
+            return None
+        m = es_meta(e)
+        if m:
+            return m
+        if e in cerrados:
+            return None
+        cerrados.add(e)
+        for d in orden:
+            if d in e.delta:
+                continue
+            for s, _ in sucesores(e, perc):
+                caja[0] = s
+                med[0] += 1
+                if not s.C:
+                    continue
+                if s.accion != d:
+                    continue
+                r = dfs(s, prof + 1)
+                if r:
+                    caja[0] = s
+                    return r
+        return None
+
+    meta = dfs(raiz, 0)
+    return _resultado(meta, med[0], len(cerrados),
+                      _camino(caja[0]) if meta else [])
+
+
+def astar(perc):
+    """A* con h admisible y consistente; desempate por el grafo."""
+    raiz = Estado((), frozenset(CLASES), frozenset())
+    frontera = [(h_rasgos(raiz), h_grafo(raiz), 0, raiz)]
+    contador, cerrados, med = 0, set(), 0
+    while frontera:
+        _, _, _, e = heapq.heappop(frontera)
+        if e in cerrados:
+            continue
+        cerrados.add(e)
+        m = es_meta(e)
+        if m:
+            return _resultado(m, med, len(cerrados), _camino(e))
+        for s, _ in sucesores(e, perc):
+            med += 1
+            if s.C and s not in cerrados:
+                contador += 1
+                heapq.heappush(frontera,
+                               (s.g + h_rasgos(s), h_grafo(s), contador, s))
+    return _resultado(None, med, len(cerrados), [])
+
+
+def _camino(e):
+    out = []
+    while e and e.accion:
+        out.append((e.accion, dict(e.rasgos).get(e.accion)))
+        e = e.padre
+    return list(reversed(out))
+
+
+# --------------------------------------------------------------------------- #
+# 5. Algoritmo genetico sobre el orden de pruebas
+# --------------------------------------------------------------------------- #
+
+
+def _aptitud(orden, muestras):
+    total = 0.0
+    for perc, _ in muestras:
+        r = profundidad(perc, orden)
+        total += r["mediciones"] + (0 if r["exito"] else 60)
+    return total / len(muestras)
+
+
+def _ox(p1, p2, rng):
+    n = len(p1)
+    a, b = sorted(rng.sample(range(n), 2))
+    hijo = [None] * n
+    hijo[a:b] = p1[a:b]
+    resto = [g for g in p2 if g not in hijo]
+    i = 0
+    for k in range(n):
+        if hijo[k] is None:
+            hijo[k] = resto[i]
+            i += 1
+    return hijo
+
+
+def genetico(muestras, rng, pob=40, gens=120, pc=0.9, pm=0.2, elite=2):
+    P = [rng.sample(DETECTORES, len(DETECTORES)) for _ in range(pob)]
+    mejor, mejor_f = None, float("inf")
+    for _ in range(gens):
+        P.sort(key=lambda x: _aptitud(x, muestras))
+        if _aptitud(P[0], muestras) < mejor_f:
+            mejor, mejor_f = list(P[0]), _aptitud(P[0], muestras)
+        nueva = P[:elite]
+        while len(nueva) < pob:
+            p1 = min(rng.sample(P, 3), key=lambda x: _aptitud(x, muestras))
+            p2 = min(rng.sample(P, 3), key=lambda x: _aptitud(x, muestras))
+            h1 = _ox(p1, p2, rng) if rng.random() < pc else list(p1)
+            if rng.random() < pm:
+                i, j = rng.sample(range(len(h1)), 2)
+                h1[i], h1[j] = h1[j], h1[i]
+            nueva.append(h1)
+        P = nueva
+    return mejor, mejor_f
+
+
+# --------------------------------------------------------------------------- #
+# 6. Banco de pruebas
+# --------------------------------------------------------------------------- #
+
+
+def banco(trials, ruido, rng):
+    casos = []
+    for clase in CLASES:
+        for _ in range(trials):
+            casos.append((clase, PercepcionSintetica(clase, ruido, rng)))
+    return casos
+
+
+def evaluar(nombre, fn, casos):
+    aciertos, med, coste, fallos = 0, [], [], 0
+    matriz = {c: {k: 0 for k in CLASES} for c in CLASES}
+    for verdad, perc in casos:
+        r = fn(perc)
+        med.append(r["mediciones"])
+        coste.append(sum(1 + MU for _ in r["camino"]))
+        if r["exito"]:
+            matriz[verdad][r["clase"]] += 1
+            aciertos += r["clase"] == verdad
+        else:
+            fallos += 1
+    n = len(casos)
+    return dict(nombre=nombre, acierto=100 * aciertos / n,
+                med=statistics.mean(med), med_min=min(med),
+                fallos=100 * fallos / n, matriz=matriz)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--algo", default="todos",
+                    choices=["todos", "ucs", "dfs", "astar"])
+    ap.add_argument("--trials", type=int, default=40)
+    ap.add_argument("--ruido", type=float, default=0.10)
+    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--image")
+    ap.add_argument("--ga", action="store_true")
+    args = ap.parse_args()
+
+    if args.image:
+        perc = PercepcionImagen(args.image)
+        for nombre, fn in (("UCS", coste_uniforme), ("DFS", profundidad), ("A*", astar)):
+            r = fn(perc)
+            print(f"{nombre:4} -> {r['clase']}  mediciones={r['mediciones']} "
+                  f"expandidos={r['expandidos']}")
+            print("      camino:", " -> ".join(f"{d}={v}" for d, v in r["camino"]))
+        return
+
+    rng = random.Random(args.seed)
+    casos = banco(args.trials, args.ruido, rng)
+
+    algoritmos = {"UCS": coste_uniforme, "DFS": profundidad, "A*": astar}
+    if args.algo != "todos":
+        algoritmos = {k: v for k, v in algoritmos.items()
+                      if k.lower().replace("*", "") == args.algo}
+
+    print(f"clases={len(CLASES)}  casos={len(casos)}  ruido={args.ruido}\n")
+    print(f"{'algoritmo':10}{'acierto%':>10}{'fallos%':>9}{'mediciones':>12}{'min':>6}")
+    for nombre, fn in algoritmos.items():
+        r = evaluar(nombre, fn, casos)
+        print(f"{r['nombre']:10}{r['acierto']:10.1f}{r['fallos']:9.1f}"
+              f"{r['med':12.1f}{r['med_min']:6d}")
+        print("  confusion:", {k: v for k, v in r["matriz"].items() if any(v.values())})
+
+    if args.ga:
+        print("\nevolucionando orden de pruebas...")
+        muestra = casos[:120]
+        orden, f = genetico(muestra, rng)
+        print("mejor orden:", orden, f"coste medio={f:.2f}")
+        r = evaluar("GA+DFS", lambda p: profundidad(p, orden), casos)
+        print(f"{r['nombre']:10}{r['acierto']:10.1f}{r['fallos']:9.1f}"
+              f"{r['med']:12.1f}{r['med_min']:6d}")
+
+
+if __name__ == "__main__":
+    main()

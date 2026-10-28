@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Reconocimiento de figuras como problema de búsqueda</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 10.8pt; line-height: 1.55; color: #111;
+    max-width: 178mm; margin: 0 auto; padding: 8mm 0 20mm;
+    text-align: justify; hyphens: auto;
+  }
+  h1, h2, h3, h4 { font-family: "Helvetica Neue", Arial, sans-serif; text-align: left; hyphens: none; }
+  h1 { font-size: 22pt; line-height: 1.15; margin: 0 0 6mm; }
+  h2 { font-size: 14pt; margin: 0 0 4mm; padding-bottom: 1.5mm; border-bottom: 1.6pt solid #111; page-break-before: always; }
+  h2.nobreak { page-break-before: auto; }
+  h3 { font-size: 11.5pt; margin: 7mm 0 2mm; color: #1a1a1a; }
+  h4 { font-size: 10.5pt; margin: 5mm 0 1.5mm; font-style: italic; }
+  p { margin: 0 0 3mm; }
+  ul, ol { margin: 0 0 3mm 6mm; padding-left: 4mm; }
+  li { margin-bottom: 1.5mm; }
+  table { width: 100%; border-collapse: collapse; font-size: 8.6pt; margin: 3mm 0 5mm; page-break-inside: avoid; }
+  th, td { border: 0.5pt solid #999; padding: 1.4mm 2mm; text-align: left; vertical-align: top; }
+  th { background: #ececec; font-family: Arial, sans-serif; font-size: 8.2pt; }
+  td.c, th.c { text-align: center; }
+  code, pre { font-family: "SFMono-Regular", Consolas, monospace; font-size: 8.6pt; }
+  pre { background: #f6f6f6; border-left: 2.5pt solid #666; padding: 3mm 4mm; margin: 3mm 0 5mm;
+        white-space: pre-wrap; page-break-inside: avoid; line-height: 1.35; text-align: left; }
+  .math { font-family: Georgia, serif; font-style: italic; }
+  .dm { display: block; text-align: center; margin: 4mm 0; font-size: 11.5pt; }
+  .cover { page-break-after: always; padding-top: 22mm; }
+  .cover .rule { border-top: 3pt solid #111; margin: 6mm 0; }
+  .sub { font-size: 12pt; font-style: italic; color: #333; margin-bottom: 14mm; }
+  .meta { font-size: 9pt; color: #444; font-family: Arial, sans-serif; line-height: 1.7; }
+  .box { border: 0.8pt solid #333; background: #fafafa; padding: 3mm 4mm; margin: 4mm 0; page-break-inside: avoid; }
+  .box-t { font-family: Arial, sans-serif; font-size: 8.6pt; font-weight: bold; text-transform: uppercase;
+           letter-spacing: .06em; margin-bottom: 1.5mm; }
+  .note { border-left: 2.5pt solid #888; padding-left: 4mm; font-size: 9.6pt; color: #222; margin: 3mm 0; }
+  figure { margin: 5mm 0; page-break-inside: avoid; }
+  figcaption { font-family: Arial, sans-serif; font-size: 8.4pt; color: #333; margin-top: 1.5mm; text-align: left; }
+  .toc { font-family: Arial, sans-serif; font-size: 9.6pt; }
+  .toc div { margin-bottom: 1.6mm; }
+  .toc .l2 { padding-left: 7mm; font-size: 9pt; color: #333; }
+  .ok { color: #1b5e20; font-weight: bold; }
+  .bad { color: #b71c1c; font-weight: bold; }
+  .foot { margin-top: 10mm; padding-top: 3mm; border-top: 0.5pt solid #999; font-size: 8.4pt; color: #555; }
+  svg { max-width: 100%; height: auto; display: block; }
+</style>
+</head>
+<body>
+
+<!-- ============ PORTADA ============ -->
+<div class="cover">
+  <div class="meta">Inteligencia Artificial &middot; Representación del conocimiento y búsqueda</div>
+  <div class="rule"></div>
+  <h1>Reconocimiento de figuras geométricas como problema de búsqueda</h1>
+  <p class="sub">Formalización del espacio de estados, grafo de similitud ponderado y análisis comparado de estrategias ciegas, heurísticas y evolutivas</p>
+  <div class="rule"></div>
+  <p style="font-size:9.6pt; text-align:left; color:#333; margin-top:10mm;">
+    <strong>Objeto del documento.</strong> Se formaliza el reconocimiento de figuras como un problema
+    de búsqueda en un espacio de estados implícito; se construye el grafo representativo de la
+    confusión entre clases con pesos justificados rasgo a rasgo; y se analizan tres familias de
+    algoritmos, con demostración de admisibilidad de la heurística propuesta y comparativa
+    de coste.
+  </p>
+  <div class="meta" style="margin-top:16mm;">
+    Clases del dominio: triángulo &middot; cuadrado &middot; trapecio &middot; pentágono &middot; círculo &middot; <em>null</em><br>
+    Estado inicial: imagen cruda &middot; Criterio de optimalidad: mínimo número de comparaciones y de rasgos no coincidentes
+  </div>
+</div>
+
+<!-- ============ ÍNDICE ============ -->
+<h2>Índice</h2>
+<div class="toc">
+  <div>1. Formalización del problema</div>
+  <div class="l2">1.1 Estado inicial &middot; 1.2 Espacio de estados &middot; 1.3 Acciones &middot; 1.4 Prueba de objetivo &middot; 1.5 Función de coste</div>
+  <div class="l2">1.6 Por qué es un problema de búsqueda &middot; 1.7 Búsqueda ciega o heurística &middot; 1.8 Cierre</div>
+  <div>2. Grafo representativo del espacio de clasificación</div>
+  <div class="l2">2.1 Convención &middot; 2.2 Aristas, pesos y justificación &middot; 2.3 Inicio y objetivos</div>
+  <div class="l2">2.4 Representación visual &middot; 2.5 Lectura dentro de la búsqueda &middot; 2.6 Observaciones</div>
+  <div>3. Algoritmos</div>
+  <div class="l2">3.1 Búsqueda ciega &middot; 3.2 Búsqueda heurística y admisibilidad &middot; 3.3 Algoritmo genético &middot; 3.4 Comparativa</div>
+  <div>4. Conclusiones</div>
+  <div>5. Anexos: tabla de símbolos, glosario de rasgos, fuentes de los diagramas</div>
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Formalización</h2>
+
+<p>Un problema de búsqueda se define como la 6-tupla</p>
+<p class="dm"><span class="math">P = ⟨ S, s<sub>0</sub>, A, f, G, c ⟩</span></p>
+<p>instanciada sobre una imagen de entrada <span class="math">I ∈ ℝ<sup>M×N</sup></span> (o su versión segmentada). A continuación se detalla cada componente.</p>
+
+<h3>1.1 Estado inicial</h3>
+<p>Sea <span class="math">D</span> el conjunto de detectores</p>
+<p class="dm"><span class="math">D = { n_lados, n_vértices, ángulos, simetrías, convexidad, área, perímetro }</span></p>
+<p>y sea <span class="math">𝒫(d)</span> el conjunto de configuraciones admisibles de cada detector (umbral de binarización, ROI, tolerancia <span class="math">ε</span>, parámetros de Hough/contornos, etc.).</p>
+<p>El estado inicial es</p>
+<p class="dm"><span class="math">s<sub>0</sub> = ⟨ I, <b>F</b><sub>0</sub>, Δ<sub>0</sub>, C<sub>0</sub> ⟩ &nbsp;&nbsp; con <b>F</b><sub>0</sub> = (⊥,⊥,⊥,⊥,⊥,⊥,⊥), Δ<sub>0</sub> = ∅, C<sub>0</sub> = 𝒦</span></p>
+<p>donde:</p>
+<ul>
+  <li><span class="math">I</span>: <strong>imagen cruda, sin procesar</strong> — el único dato de partida.</li>
+  <li><span class="math"><b>F</b></span>: vector de rasgos <span class="math"><b>F</b> = (n<sub>v</sub>, n<sub>l</sub>, Θ, Σ, κ, A, P)</span> con valores en <span class="math">ℝ ∪ {⊥}</span>; <span class="math">⊥</span> denota <em>no medido</em>. <span class="math">Θ</span> es el multiconjunto de ángulos internos, <span class="math">Σ</span> el número/grupo de simetrías, <span class="math">κ ∈ {convexo, cóncavo, ⊥}</span> la convexidad, <span class="math">A</span> el área y <span class="math">P</span> el perímetro.</li>
+  <li><span class="math">Δ ⊆ D × 𝒫</span>: detectores ya aplicados con su configuración (evita reejecución).</li>
+  <li><span class="math">C ⊆ 𝒦 = {T, Cu, R, Pn, Ci}</span>: <strong>conjunto de hipótesis supervivientes</strong> (triángulo, cuadrado, rectángulo, pentágono, círculo), es decir, la interpretación parcial acumulada.</li>
+</ul>
+<p>El estado inicial no contiene ninguna interpretación: solo la imagen y la totalidad de las hipótesis abiertas.</p>
+
+<h3>1.2 Espacio de estados</h3>
+<p class="dm"><span class="math">S = { ⟨ I, <b>F</b>, Δ, C ⟩ : <b>F</b> ∈ (ℝ ∪ {⊥})<sup>7</sup>, Δ ⊆ D×𝒫, C ⊆ 𝒦 }</span></p>
+<p>Cada estado es una <strong>interpretación parcial</strong>: una acumulación de rasgos medidos con incertidumbre <span class="math">ε</span> y el conjunto de figuras aún compatibles con ellos. Dos restricciones estructurales definen la legalidad del espacio:</p>
+<ol>
+  <li><strong>Monotonía de la información</strong>: si <span class="math">s' = f(s,a)</span> entonces <span class="math"><b>F</b><sub>s</sub> ⊑ <b>F</b><sub>s'</sub></span> (el orden de información: <span class="math">⊥ ⊑ x</span>, y los valores medidos solo se refinan dentro de <span class="math">ε</span>). Un rasgo medido no se «des-mide».</li>
+  <li><strong>Poda por consistencia</strong>: <span class="math">C<sub>s'</sub> = { c ∈ C<sub>s</sub> : <b>F</b><sub>s'</sub> es compatible con Σ<sub>c</sub> }</span>, donde <span class="math">Σ<sub>c</sub></span> es la signatura característica de la clase <span class="math">c</span>. Un estado con <span class="math">C<sub>s</sub> = ∅</span> es un <strong>callejón sin salida</strong>.</li>
+</ol>
+<p>Signaturas de referencia (umbral <span class="math">ε</span> por componente):</p>
+<table>
+  <thead><tr><th>Clase</th><th class="c">n<sub>v</sub></th><th class="c">n<sub>l</sub></th><th>Θ</th><th>κ</th><th class="c">|Σ|</th><th>P/A</th></tr></thead>
+  <tbody>
+    <tr><td>Triángulo</td><td class="c">3</td><td class="c">3</td><td>suma 180°</td><td>convexo</td><td class="c">0–3</td><td>—</td></tr>
+    <tr><td>Cuadrado</td><td class="c">4</td><td class="c">4</td><td>{90°}</td><td>convexo</td><td class="c">4</td><td>A=l², P=4l</td></tr>
+    <tr><td>Rectángulo</td><td class="c">4</td><td class="c">4</td><td>{90°}</td><td>convexo</td><td class="c">2</td><td>A=ab, P=2(a+b)</td></tr>
+    <tr><td>Pentágono</td><td class="c">5</td><td class="c">5</td><td>{108°}</td><td>convexo</td><td class="c">5</td><td>—</td></tr>
+    <tr><td>Círculo</td><td class="c">0</td><td class="c">1 (curvo)</td><td>—</td><td>convexo</td><td class="c">∞</td><td>A=πr², P=2πr</td></tr>
+  </tbody>
+</table>
+<p>Nótese que <strong>ningún rasgo aislado</strong> separa las cinco clases: <span class="math">n<sub>v</sub>=4</span> es ambiguo entre cuadrado y rectángulo; <span class="math">n<sub>v</sub></span> y <span class="math">P</span> son ambiguos entre triángulo y pentágono bajo ruido. La desambiguación exige <strong>composición de rasgos</strong>, lo que es precisamente lo que genera la profundidad del árbol.</p>
+
+<h3>1.3 Acciones</h3>
+<p class="dm"><span class="math">A(s) = { aplicar(d, π) : d ∈ D, π ∈ 𝒫(d), (d,π) ∉ Δ<sub>s</sub> }</span></p>
+<p>Cada acción ejecuta un detector sobre <span class="math">I</span> (o sobre la ROI ya aislada), devuelve un valor <span class="math">v<sub>d</sub></span> con error <span class="math">±ε</span> y <strong>rellena exactamente una componente</strong> de <span class="math"><b>F</b></span>:</p>
+<p class="dm"><span class="math">f(s, aplicar(d,π)) = ⟨ I, <b>F</b>[d ← v<sub>d</sub>], Δ<sub>s</sub> ∪ {(d,π)}, C<sub>s'</sub> ⟩</span></p>
+<p>El factor de ramificación es <span class="math">b = |D| · |𝒫|</span>, típicamente en el orden de decenas. La profundidad máxima es <span class="math">|D| = 7</span> (cada detector se aplica una vez por configuración). Existe <strong>conmutatividad parcial</strong>: aplicar <code>area</code> antes que <code>simetrias</code> o al revés produce el mismo <span class="math"><b>F</b></span> → el espacio es un <strong>grafo</strong>, no un árbol, y requiere lista de cerrados.</p>
+
+<h3>1.4 Prueba de objetivo</h3>
+<p class="dm"><span class="math">G(s) ⇔ ∃ c ∈ C<sub>s</sub> : ( ∀ j ∈ Disc(c) : |<b>F</b><sub>s</sub>[j] − Σ<sub>c</sub>[j]| ≤ ε<sub>j</sub> )</span></p>
+<p>donde <span class="math">Disc(c)</span> son los rasgos discriminantes de <span class="math">c</span>. Es decir: el objetivo se alcanza cuando los rasgos acumulados <strong>coinciden dentro de tolerancia</strong> con una de las cinco figuras y esa figura sigue siendo la única superviviente consistente.</p>
+
+<h3>1.5 Función de coste</h3>
+<p class="dm"><span class="math">c(s, a, s') = 1<sub>(comparación)</sub> + μ · |C<sub>s</sub> ∖ C<sub>s'</sub>|<sub>(rasgos no coincidentes)</sub> , &nbsp; μ ≥ 1</span></p>
+<p>Coste de camino <span class="math">g(s) = Σ c</span>, y la solución óptima es</p>
+<p class="dm"><span class="math">s* = arg min<sub>s ∈ Γ</sub> g(s), &nbsp;&nbsp; Γ = { s : G(s) }</span></p>
+<p>Esto codifica literalmente el criterio pedido: <strong>número de comparaciones ejecutadas más penalización por rasgos que no coinciden</strong>. Minimizar <span class="math">g</span> equivale a reconocer con el menor cómputo y la menor contradicción; si <span class="math">Γ = ∅</span> (la imagen no contiene ninguna figura objetivo), el mejor estado parcial minimiza los rasgos no coincidentes y funciona como <strong>clasificación por vecino más cercano</strong>.</p>
+
+<h3>1.6 Por qué esto es un problema de búsqueda</h3>
+<ol>
+  <li><strong>Hay un estado distinguido de partida y un conjunto de meta.</strong> <span class="math">s<sub>0</sub></span> (imagen cruda, hipótesis completa, rasgos vacíos) y <span class="math">G</span> están definidos con precisión. El reconocimiento no aparece de golpe: se construye.</li>
+  <li><strong>La solución es un camino, no un valor.</strong> Lo que se devuelve es la secuencia de operaciones de detección/comparación que conduce de <span class="math">s<sub>0</sub></span> a un estado meta, junto con la interpretación terminal. El «resultado» del algoritmo es un plan de reconocimiento ejecutado, y por eso el coste de camino es significativo.</li>
+  <li><strong>El espacio se genera, no se enumera.</strong> <span class="math">S</span> no está dado a priori (no es una tabla de 5 filas); sus elementos se producen aplicando <span class="math">f</span>, y su tamaño depende de las decisiones de detección. Es un espacio implícito.</li>
+  <li><strong>Hay elección genuina.</strong> En cada estado hay varios detectores y configuraciones aplicables, y el orden altera tanto el coste como la poda. La selección de ROI/umbral introduce no determinismo real: el mismo detector con dos umbrales lleva a estados distintos.</li>
+  <li><strong>Hay optimalidad y redundancia.</strong> Varios caminos alcanzan el mismo estado (conmutatividad), y distintos caminos meta tienen distinto coste → se puede hablar de solución óptima, de repetidos y de la necesidad de cerrados.</li>
+  <li><strong>Hay callejones sin salida.</strong> Un umbral mal elegido produce <span class="math">C<sub>s</sub> = ∅</span>; la búsqueda debe poder retroceder (<em>backtracking</em>) y no solo avanzar.</li>
+</ol>
+<p>Formalmente, todo esto satisface la definición estándar de problema de búsqueda: grafo implícito, operadores generativos, condición de meta verificable, coste aditivo. Un clasificador de una sola pasada con pipeline fijo sería el <strong>caso degenerado</strong> en el que el árbol tiene un único camino; en cuanto los detectores se parametrizan y el orden se decide, el problema es de búsqueda en sentido pleno (y de hecho tiene sabor de <strong>planificación</strong>: se busca el plan de percepción, no solo la etiqueta).</p>
+
+<figure>
+<svg viewBox="0 0 880 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Árbol de búsqueda">
+  <rect width="880" height="350" fill="#fff"/>
+  <g stroke="#555" stroke-width="1.3" fill="none">
+    <line x1="104" y1="175" x2="235" y2="62"/>
+    <line x1="104" y1="175" x2="235" y2="172"/>
+    <line x1="104" y1="175" x2="235" y2="282"/>
+    <line x1="425" y1="62" x2="525" y2="34"/>
+    <line x1="425" y1="62" x2="525" y2="98"/>
+    <line x1="425" y1="62" x2="525" y2="162"/>
+    <line x1="425" y1="172" x2="525" y2="252"/>
+    <line x1="425" y1="282" x2="525" y2="318"/>
+  </g>
+  <g font-family="Arial" font-size="12" fill="#111">
+    <circle cx="72" cy="175" r="34" fill="#e8e8e8" stroke="#222" stroke-width="1.8"/>
+    <text x="72" y="180" text-anchor="middle" font-weight="bold">s₀</text>
+    <rect x="235" y="42" width="190" height="40" rx="5" fill="#f2f2f2" stroke="#444"/>
+    <text x="330" y="67" text-anchor="middle">n_v = 4 → {Cu, R}</text>
+    <rect x="235" y="152" width="190" height="40" rx="5" fill="#f2f2f2" stroke="#444"/>
+    <text x="330" y="177" text-anchor="middle">n_l = 3 → {T}</text>
+    <rect x="235" y="262" width="190" height="40" rx="5" fill="#f2f2f2" stroke="#444"/>
+    <text x="330" y="287" text-anchor="middle">simetrías = ∞ → {Ci}</text>
+    <rect x="525" y="14" width="200" height="40" rx="5" fill="#e5f2e5" stroke="#1b5e20"/>
+    <text x="625" y="39" text-anchor="middle">simetrías = 4 → {Cu} ✓</text>
+    <rect x="525" y="78" width="200" height="40" rx="5" fill="#e5f2e5" stroke="#1b5e20"/>
+    <text x="625" y="103" text-anchor="middle">simetrías = 2 → {R} ✓</text>
+    <rect x="525" y="142" width="200" height="40" rx="5" fill="#fbe6e6" stroke="#b71c1c"/>
+    <text x="625" y="167" text-anchor="middle">ángulos ≠ 90° → ∅ ✗</text>
+    <rect x="525" y="232" width="200" height="40" rx="5" fill="#e5f2e5" stroke="#1b5e20"/>
+    <text x="625" y="257" text-anchor="middle">Σ ángulos = 180° → {T} ✓</text>
+    <rect x="525" y="298" width="200" height="40" rx="5" fill="#e5f2e5" stroke="#1b5e20"/>
+    <text x="625" y="323" text-anchor="middle">P/A = 2/r → {Ci} ✓</text>
+    <text x="200" y="344" font-size="10" fill="#666">✗ = retroceso por contradicción</text>
+  </g>
+</svg>
+<figcaption>Figura 1. Expansión del árbol desde el estado inicial con poda por contradicción. Tres niveles de profundidad bastan para confirmar cualquier clase del dominio.</figcaption>
+</figure>
+
+<h3>1.7 Búsqueda ciega o heurística</h3>
+<p><strong>La búsqueda heurística (informada) es la adecuada.</strong> No es una preferencia estética: es la única que respeta la estructura del problema.</p>
+<h4>Por qué la ciega falla</h4>
+<ul>
+  <li>Amplitud (BFS) garantiza optimalidad en número de acciones, pero expande <span class="math">O(b<sup>d</sup>)</span> nodos. Con <span class="math">b ≈ 40</span> y <span class="math">d = 7</span> son millones de expansiones, y <strong>cada expansión cuesta procesamiento de imagen real</strong> (convoluciones, Hough, contornos). BFS ignora que las acciones tienen precio heterogéneo.</li>
+  <li>Profundidad (DFS) es barata en memoria pero arbitraria: puede medir área y perímetro antes de saber si hay un solo contorno cerrado, y se hunde en ramas estériles hasta agotar la lista de cerrados.</li>
+  <li>Profundidad iterativa repite los detectores más caros en cada iteración.</li>
+</ul>
+<h4>Por qué la heurística es la correcta</h4>
+<ol>
+  <li><strong>El dominio regala una heurística barata, admisible y consistente</strong>: el poder discriminante de cada rasgo sobre las hipótesis supervivientes.
+    <p class="dm"><span class="math">h(s) = min<sub>c ∈ C<sub>s</sub></sub> | { j ∈ Disc(c) : <b>F</b><sub>s</sub>[j] = ⊥ } |</span></p>
+    Como cada acción rellena <strong>como máximo una</strong> componente de <span class="math"><b>F</b></span>, ninguna clase puede confirmarse con menos acciones que rasgos le falten → <span class="math">h</span> <strong>nunca sobreestima</strong> (admisible). Y cada acción reduce <span class="math">h</span> a lo sumo en 1 → <strong>consistente</strong>, por lo que A* con esta <span class="math">h</span> es óptimo sin reaperturas y con lista de cerrados.</li>
+  <li><strong>Reduce el factor de ramificación efectivo a la baja.</strong> En <span class="math">s<sub>0</sub></span> conviene medir primero <span class="math">n<sub>v</sub></span> o la simetría (parten las 5 clases en subconjuntos disjuntos), no el área ni el perímetro (apenas discriminan entre las cinco). Con el ordenamiento heurístico el árbol pasa de <span class="math">O(b<sup>d</sup>)</span> a del orden de <span class="math">O(|𝒦| log |𝒦|)</span> comparaciones: es, de hecho, la construcción de un <strong>árbol de decisión casi óptimo</strong> (tipo ID3/Huffman).</li>
+  <li><strong>El coste es el criterio de optimalidad</strong>, y A* es el marco que lo optimiza explícitamente. La búsqueda de mejor primero por <span class="math">h</span> sola (<em>greedy</em>) es más rápida pero no óptima; A* con <span class="math">f = g + h</span> da el mínimo de comparaciones y contradicciones.</li>
+  <li><strong>Aguanta el ruido y la ausencia de figura.</strong> Con <span class="math">ε</span> y la poda por consistencia, la heurística permite abandonar ramas por contradicción en vez de explorarlas hasta el fondo, y el coste por desajuste da un criterio de «mejor aproximación» cuando <span class="math">Γ = ∅</span>.</li>
+</ol>
+<p><strong>Salvedad estructural:</strong> si se modela la figura como descomposición en subpartes necesarias (lados que deben satisfacer relaciones conjuntamente), el grafo correcto es <strong>Y/O</strong> y el algoritmo correspondiente es <strong>AO*</strong>, no A* sobre un árbol simple. Para el caso de 5 clases y rasgos globales, A* con la <span class="math">h</span> anterior es suficiente y preferible.</p>
+
+<h3>1.8 Cierre</h3>
+<p>Queda formalizado como <span class="math">P = ⟨S, s<sub>0</sub>, A, f, G, c⟩</span> con estado inicial de imagen cruda, estados de interpretación parcial monótona, acciones de detección, prueba de coincidencia con signatura dentro de tolerancia y coste por comparación más desajuste. Es un problema de búsqueda por su grafo implícito, su generación por operadores, su meta verificable, su redundancia y su optimalidad. La estrategia adecuada es <strong>A* con la heurística de rasgos faltantes</strong>, admisible y consistente, porque el precio está en las acciones de percepción y el dominio proporciona una cota inferior exacta del trabajo restante.</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Grafo representativo del espacio de clasificación</h2>
+
+<h3>2.1 Convención</h3>
+<p>Grafo <strong>no dirigido</strong> <span class="math">G = (V, E, w)</span>, con:</p>
+<ul>
+  <li><span class="math">V = {D, Ci, Cu, Tr, Ti, Es, ∅}</span> — 7 nodos: <span class="math">D</span> = <em>desconocida / imagen cruda</em> (<strong>inicio</strong>), cinco figuras y <span class="math">∅</span> = <em>null</em> (<strong>rechazo</strong>).</li>
+  <li><span class="math">w: E → {1,…,10}</span> — el peso es el <strong>coste de discriminación</strong>: cuántos rasgos hay que medir para separar las dos figuras. Peso bajo = comparten muchos rasgos = separación barata; peso alto = casi nada en común = separación carísima.</li>
+  <li>Regla determinista, no arbitraria: <span class="math">w(A,B) = max(1, 10 − |ℱ<sub>A</sub> ∩ ℱ<sub>B</sub>|)</span> sobre un catálogo fijo de 10 rasgos. Así el peso es reproducible y auditable rasgo a rasgo.</li>
+</ul>
+<p><strong>Catálogo de rasgos</strong> <span class="math">ℱ</span>: 1 contorno cerrado, 2 trazos rectilíneos, 3 cuadrilátero (4 vértices), 4 cuatro lados, 5 convexo, 6 ángulos interiores iguales entre sí, 7 simetría de orden ≥ 2, 8 área = base × altura, 9 perímetro = suma de lados rectos, 10 lados de igual longitud.</p>
+<p><strong>Signaturas:</strong></p>
+<table>
+  <thead><tr><th>Nodo</th><th>Rasgos poseídos</th></tr></thead>
+  <tbody>
+    <tr><td><span class="math">Ci</span></td><td>1, 5, 7 (∞), 10</td></tr>
+    <tr><td><span class="math">Cu</span></td><td>1, 2, 3, 4, 5, 6, 7 (orden 4), 8, 9, 10</td></tr>
+    <tr><td><span class="math">Tr</span></td><td>1, 2, 3, 4, 5, 8, 9</td></tr>
+    <tr><td><span class="math">Ti</span></td><td>1, 2, 5, 9 (7, 10 si es equilátero)</td></tr>
+    <tr><td><span class="math">Es</span></td><td>1, 2, 7 (orden 5), 9, 10</td></tr>
+    <tr><td><span class="math">∅</span></td><td>ninguna</td></tr>
+  </tbody>
+</table>
+<p><span class="math">D</span> no posee rasgos <em>medidos</em>: es el estado sin información.</p>
+
+<h3>2.2 Aristas, pesos y justificación</h3>
+<table>
+  <thead><tr><th>Arista</th><th class="c">w</th><th>Rasgos compartidos</th><th>Justificación del peso</th></tr></thead>
+  <tbody>
+    <tr><td>D → Ci</td><td class="c">10</td><td>—</td><td>Sin información previa hay que medir los 10 rasgos: coste máximo.</td></tr>
+    <tr><td>D → Cu</td><td class="c">10</td><td>—</td><td>Ídem.</td></tr>
+    <tr><td>D → Tr</td><td class="c">10</td><td>—</td><td>Ídem.</td></tr>
+    <tr><td>D → Ti</td><td class="c">10</td><td>—</td><td>Ídem.</td></tr>
+    <tr><td>D → Es</td><td class="c">10</td><td>—</td><td>Ídem.</td></tr>
+    <tr><td>D → ∅</td><td class="c">10</td><td>—</td><td>Rechazar exige <strong>refutar</strong> los 10 rasgos: es la hipótesis más cara de todas.</td></tr>
+    <tr><td>Cu — Tr</td><td class="c"><strong>3</strong></td><td>1, 2, 3, 4, 5, 8, 9 (7)</td><td>Ambos son cuadriláteros convexos rectilíneos, misma fórmula de área y de perímetro. Solo difieren en equiangularidad, orden de simetría (4 vs 1) e igualdad de lados. <strong>Peso mínimo del grafo.</strong></td></tr>
+    <tr><td>Cu — Es</td><td class="c">5</td><td>1, 2, 7, 9, 10 (5)</td><td>Comparten regularidad métrica (lados iguales, simetría, perímetro rectilíneo), pero la estrella es cóncava y tiene 10 vértices: convexidad y conteo las separan rápido.</td></tr>
+    <tr><td>Ci — Cu</td><td class="c">6</td><td>1, 5, 7, 10 (4)</td><td>Comparten cierre, convexidad, simetría alta y lados iguales, pero <strong>todo</strong> el resto es curvilíneo vs rectilíneo.</td></tr>
+    <tr><td>Cu — Ti</td><td class="c">6</td><td>1, 2, 5, 9 (4)</td><td>Rectilíneos, convexos, perímetro de lados rectos; difieren en n<sub>v</sub>, n<sub>l</sub>, ángulos y simetría.</td></tr>
+    <tr><td>Tr — Ti</td><td class="c">6</td><td>1, 2, 5, 9 (4)</td><td>Mismos rasgos rectilíneos/convexos; difieren en conteo y ángulos.</td></tr>
+    <tr><td>Tr — Es</td><td class="c">6</td><td>1, 2, 7, 9 (4)</td><td>Rectilíneos con simetría y perímetro de lados; chocan en convexidad, conteo y área.</td></tr>
+    <tr><td>Ci — Es</td><td class="c">7</td><td>1, 7, 10 (3)</td><td>Cierre, simetría y regularidad; todo lo demás diverge (curvo/cóncavo, 0 vs 10 vértices).</td></tr>
+    <tr><td>Ci — Tr</td><td class="c">8</td><td>1, 5 (2)</td><td>Solo comparten contorno cerrado y convexidad.</td></tr>
+    <tr><td>Ci — Ti</td><td class="c"><strong>8</strong></td><td>1, 5 (2)</td><td>Prácticamente nada en común: figura curva de simetría infinita frente a figura rectilínea de 3 lados. <strong>Peso alto</strong>, como en el enunciado.</td></tr>
+    <tr><td>Ti — Es</td><td class="c">7</td><td>1, 2, 9 (3)</td><td>Rectilíneas, pero convexa vs cóncava y 3 vs 10 vértices.</td></tr>
+    <tr><td>X — ∅</td><td class="c">10</td><td>0</td><td>Contra <em>null</em> no hay ningún rasgo que confirmar, solo refutar.</td></tr>
+  </tbody>
+</table>
+<p>Matriz de adyacencia (simétrica):</p>
+<table>
+  <thead><tr><th></th><th class="c">Ci</th><th class="c">Cu</th><th class="c">Tr</th><th class="c">Ti</th><th class="c">Es</th><th class="c">∅</th></tr></thead>
+  <tbody>
+    <tr><th>D</th><td class="c">10</td><td class="c">10</td><td class="c">10</td><td class="c">10</td><td class="c">10</td><td class="c">10</td></tr>
+    <tr><th>Ci</th><td class="c">—</td><td class="c">6</td><td class="c">8</td><td class="c">8</td><td class="c">7</td><td class="c">10</td></tr>
+    <tr><th>Cu</th><td class="c">6</td><td class="c">—</td><td class="c">3</td><td class="c">6</td><td class="c">5</td><td class="c">10</td></tr>
+    <tr><th>Tr</th><td class="c">8</td><td class="c">3</td><td class="c">—</td><td class="c">6</td><td class="c">6</td><td class="c">10</td></tr>
+    <tr><th>Ti</th><td class="c">8</td><td class="c">6</td><td class="c">6</td><td class="c">—</td><td class="c">7</td><td class="c">10</td></tr>
+    <tr><th>Es</th><td class="c">7</td><td class="c">5</td><td class="c">6</td><td class="c">7</td><td class="c">—</td><td class="c">10</td></tr>
+  </tbody>
+</table>
+
+<h3>2.3 Inicio y objetivos</h3>
+<ul>
+  <li><strong>Nodo de inicio:</strong> <span class="math">D</span> (<em>desconocida</em>). Único, sin rasgos medidos, grado 6 y todas sus aristas a 10.</li>
+  <li><strong>Nodos objetivo:</strong> <span class="math">Ci, Cu, Tr, Ti, Es</span> (las cinco clases) <strong>y</strong> <span class="math">∅</span> (objetivo secundario de rechazo, alcanzable solo tras refutar todas las signaturas).</li>
+</ul>
+
+<h3>2.4 Representación visual</h3>
+<figure>
+<svg viewBox="0 0 900 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grafo ponderado de similitud">
+  <rect width="900" height="700" fill="#fff"/>
+
+  <!-- aristas desde D (peso 10, finas y discontinuas) -->
+  <g stroke="#bdbdbd" stroke-width="1.4" stroke-dasharray="5 4">
+    <line x1="110" y1="345" x2="200" y2="70"/>
+    <line x1="110" y1="345" x2="350" y2="140"/>
+    <line x1="110" y1="345" x2="440" y2="285"/>
+    <line x1="110" y1="345" x2="440" y2="425"/>
+    <line x1="110" y1="345" x2="350" y2="565"/>
+    <line x1="110" y1="345" x2="200" y2="625"/>
+  </g>
+
+  <!-- aristas entre figuras -->
+  <g stroke-linecap="round">
+    <line x1="200" y1="70"  x2="350" y2="140" stroke="#555" stroke-width="5"/>
+    <line x1="200" y1="70"  x2="440" y2="285" stroke="#777" stroke-width="3"/>
+    <line x1="200" y1="70"  x2="440" y2="425" stroke="#777" stroke-width="3"/>
+    <line x1="200" y1="70"  x2="350" y2="565" stroke="#666" stroke-width="4"/>
+    <line x1="200" y1="70"  x2="200" y2="625" stroke="#999" stroke-width="1.5"/>
+    <line x1="350" y1="140" x2="440" y2="285" stroke="#c62828" stroke-width="9"/>
+    <line x1="350" y1="140" x2="440" y2="425" stroke="#555" stroke-width="5"/>
+    <line x1="350" y1="140" x2="350" y2="565" stroke="#444" stroke-width="6.5"/>
+    <line x1="350" y1="140" x2="200" y2="625" stroke="#999" stroke-width="1.5"/>
+    <line x1="440" y1="285" x2="440" y2="425" stroke="#555" stroke-width="5"/>
+    <line x1="440" y1="285" x2="350" y2="565" stroke="#555" stroke-width="5"/>
+    <line x1="440" y1="285" x2="200" y2="625" stroke="#999" stroke-width="1.5"/>
+    <line x1="440" y1="425" x2="350" y2="565" stroke="#666" stroke-width="4"/>
+    <line x1="440" y1="425" x2="200" y2="625" stroke="#999" stroke-width="1.5"/>
+    <line x1="350" y1="565" x2="200" y2="625" stroke="#999" stroke-width="1.5"/>
+  </g>
+
+  <!-- etiquetas de peso -->
+  <g font-family="Arial" font-size="13" font-weight="bold" fill="#111"
+     stroke="#fff" stroke-width="3.5" paint-order="stroke">
+    <text x="150" y="212">10</text>
+    <text x="225" y="247">10</text>
+    <text x="288" y="330">10</text>
+    <text x="288" y="400">10</text>
+    <text x="225" y="460">10</text>
+    <text x="150" y="490">10</text>
+    <text x="270" y="108">6</text>
+    <text x="312" y="182">8</text>
+    <text x="312" y="252">8</text>
+    <text x="258" y="300">7</text>
+    <text x="196" y="352">10</text>
+    <text x="392" y="215" fill="#c62828">3</text>
+    <text x="392" y="285">6</text>
+    <text x="345" y="355">5</text>
+    <text x="258" y="372">10</text>
+    <text x="436" y="358">6</text>
+    <text x="392" y="428">6</text>
+    <text x="312" y="458">10</text>
+    <text x="392" y="498">7</text>
+    <text x="312" y="528">10</text>
+    <text x="268" y="600">10</text>
+  </g>
+
+  <!-- nodos -->
+  <g stroke-width="2.5">
+    <circle cx="110" cy="345" r="46" fill="#1565c0" stroke="#0d47a1"/>
+    <circle cx="200" cy="70"  r="40" fill="#2e7d32" stroke="#1b5e20"/>
+    <circle cx="350" cy="140" r="40" fill="#2e7d32" stroke="#1b5e20"/>
+    <circle cx="440" cy="285" r="40" fill="#2e7d32" stroke="#1b5e20"/>
+    <circle cx="440" cy="425" r="40" fill="#2e7d32" stroke="#1b5e20"/>
+    <circle cx="350" cy="565" r="40" fill="#2e7d32" stroke="#1b5e20"/>
+    <rect x="152" y="600" width="96" height="50" rx="10" fill="#757575" stroke="#424242" stroke-dasharray="6 4"/>
+  </g>
+
+  <g font-family="Arial" font-size="11.5" font-weight="bold" fill="#fff" text-anchor="middle">
+    <text x="110" y="342">Desco-</text><text x="110" y="356">nocida</text>
+    <text x="200" y="75">Círculo</text>
+    <text x="350" y="145">Cuadrado</text>
+    <text x="440" y="290">Trapecio</text>
+    <text x="440" y="430">Triángulo</text>
+    <text x="350" y="570">Estrella</text>
+    <text x="200" y="630">Null</text>
+  </g>
+
+  <!-- leyenda -->
+  <g font-family="Arial" font-size="10.5" fill="#333">
+    <rect x="620" y="560" width="255" height="118" fill="#fafafa" stroke="#999"/>
+    <text x="632" y="578" font-weight="bold">Leyenda</text>
+    <circle cx="640" cy="595" r="8" fill="#1565c0"/><text x="655" y="599">nodo de inicio (sin rasgos medidos)</text>
+    <circle cx="640" cy="615" r="8" fill="#2e7d32"/><text x="655" y="619">nodo objetivo (figura)</text>
+    <rect x="632" y="628" width="16" height="10" fill="#757575"/><text x="655" y="637">nodo objetivo de rechazo (null)</text>
+    <line x1="632" y1="652" x2="648" y2="652" stroke="#c62828" stroke-width="7"/><text x="655" y="656">peso bajo: mucha similitud</text>
+    <line x1="632" y1="668" x2="648" y2="668" stroke="#999" stroke-width="1.5"/><text x="655" y="672">peso 10: ninguna similitud</text>
+  </g>
+  <text x="110" y="668" font-family="Arial" font-size="10.5" fill="#666">Inicio</text>
+</svg>
+<figcaption>Figura 2. Grafo de similitud ponderado. Grosor proporcional a la similitud (1/w); la arista Cu—Tr (peso 3, en rojo) es la más barata del grafo.</figcaption>
+</figure>
+
+<h3>2.5 Lectura del grafo dentro de la búsqueda</h3>
+<p>Tres consecuencias operativas:</p>
+<p><strong>1. El grafo no enruta, ordena pruebas.</strong> Todas las aristas de <span class="math">D</span> valen 10, así que ir <span class="math">D → Tr → Cu</span> (13) nunca mejora a <span class="math">D → Cu</span> (10). La información útil está en los pesos entre figuras: son el <strong>coste residual de discriminación</strong> una vez que la primera hipótesis ha sido confirmada o refutada. Por eso el grafo define el <em>orden</em> de los detectores, no la ruta.</p>
+<p><strong>2. El árbol de expansión mínimo es la batería de pruebas óptima.</strong> MST por Kruskal: <span class="math">Cu–Tr (3)</span>, <span class="math">Cu–Es (5)</span>, <span class="math">Cu–Ti (6)</span>, <span class="math">Ci–Cu (6)</span>, <span class="math">∅–Ci (10)</span> → coste total <strong>30</strong> comparaciones para separar las seis clases. Un orden fijo ingenuo que mida los 10 rasgos contra las 5 figuras cuesta <span class="math">5 × 10 = 50</span>. El grafo ahorra un <strong>40 %</strong> del cómputo, y lo hace concentrando primero el trabajo barato donde el riesgo de confusión es mayor (el clúster de cuadriláteros).</p>
+<p><strong>3. Da la heurística admisible de la sección 1.</strong> Para todo conjunto superviviente <span class="math">S</span>:</p>
+<p class="dm"><span class="math">h(S) = min{ w(u,v) : u ∈ S, v ∈ Objetivos ∩ S, u ≠ v }</span></p>
+<p>Con <span class="math">S = {Tr, Ti, Es, ∅}</span> tras refutar <span class="math">Ci</span> y <span class="math">Cu</span>: <span class="math">h = 6</span> (arista <span class="math">Tr–Ti</span>). Es una cota inferior real — ningún camino puede separar dos hipótesis con menos rasgos que la arista mínima que las une — y por tanto A* con esta <span class="math">h</span> sigue siendo óptimo.</p>
+
+<h3>2.6 Observaciones</h3>
+<ul>
+  <li>Los pesos son <strong>ordinales</strong>, no una métrica euclídea: <span class="math">w(Cu,Tr)=3</span> no significa «tres veces más parecidos que <span class="math">w(Cu,Ti)=6</span>», sino que están en ese orden de similitud.</li>
+  <li>La arista <span class="math">Cu–Tr</span> es la de menor peso del grafo y coincide con el ejemplo del enunciado (4 lados compartidos). Nótese que el peso 3 es aún menor que el que sugeriría «comparten 4 lados», porque comparten siete rasgos: es el par crítico donde una búsqueda ciega gastaría más tiempo del necesario.</li>
+  <li><span class="math">∅</span> queda aislado a peso 10 de todo: el rechazo es la clase más cara y su confirmación exige la batería completa, lo que la convierte en el último recurso del algoritmo.</li>
+  <li>El grafo es ajustable: si se añade «rectángulo» como clase, se inserta entre <span class="math">Cu</span> y <span class="math">Tr</span> con pesos 2–3, y si se añade «rombo», entre <span class="math">Cu</span> y <span class="math">Es</span> con peso 2. La topología del clúster de cuadriláteros es la zona de máxima densidad y por tanto donde el orden de pruebas importa.</li>
+</ul>
+
+<!-- ============ 3 ============ -->
+<h2>3. Algoritmos</h2>
+
+<h3>3.1 Búsqueda ciega</h3>
+<p>La búsqueda ciega recorre <span class="math">G</span> <strong>sin usar <span class="math">w</span> como estimación de cercanía a la meta</strong>: solo distingue coste acumulado <span class="math">g</span> y orden de expansión. Se opera sobre el grafo de la sección 2 con el estado inicial <span class="math">D</span>.</p>
+<p><strong>Variante de coste uniforme</strong> (la única ciega que respeta los pesos):</p>
+<pre>frontera ← cola de prioridad por g
+frontera.push(D, g=0) ; cerrados ← ∅
+mientras frontera ≠ ∅:
+    n ← frontera.pop_min_g()
+    si G(n) → devolver camino(n) y clasificar
+    para cada vecino v de n con w(n,v):
+        si v ∉ cerrados: frontera.push(v, g(n)+w(n,v))
+    cerrados ← cerrados ∪ {n}</pre>
+<p><strong>Traza real sobre el grafo.</strong> Como todas las aristas desde <span class="math">D</span> valen 10, la primera expansión abre los seis frentes a la vez:</p>
+<table>
+  <thead><tr><th class="c">Paso</th><th>Nodo expandido</th><th>Medición ejecutada</th><th class="c">g</th><th>Supervivientes</th></tr></thead>
+  <tbody>
+    <tr><td class="c">1</td><td>D</td><td>abre 6 vecinos</td><td class="c">0</td><td>todas</td></tr>
+    <tr><td class="c">2</td><td>Ci (desempate alfabético)</td><td>los 10 rasgos</td><td class="c">10</td><td>—</td></tr>
+    <tr><td class="c">3</td><td>Cu</td><td>los 10 rasgos</td><td class="c">10</td><td>—</td></tr>
+    <tr><td class="c">4</td><td>Tr</td><td>los 10 rasgos</td><td class="c">10</td><td>—</td></tr>
+    <tr><td class="c">5</td><td>Ti</td><td>los 10 rasgos</td><td class="c">10</td><td>—</td></tr>
+    <tr><td class="c">6</td><td>Es</td><td>los 10 rasgos</td><td class="c">10</td><td>—</td></tr>
+  </tbody>
+</table>
+<p><strong>Consecuencia estructural:</strong> la primera meta se alcanza con <span class="math">g=10</span>, pero <em>ninguna</em> meta puede declararse óptima hasta haber expandido las cinco con <span class="math">g=10</span>, porque todas empatan. La búsqueda ciega <strong>no explota la estructura de similitud</strong>: los pesos 3 y 5 del clúster de cuadriláteros nunca se usan para ordenar nada, porque todas las aristas de salida de <span class="math">D</span> son 10. Coste garantizado: <span class="math">5 × 10 = 50</span> comparaciones.</p>
+<p><strong>Por amplitud (BFS)</strong> recorre por niveles de profundidad: al ser el grafo plano desde <span class="math">D</span>, devuelve la primera figura hallada en el nivel 1, con memoria <span class="math">O(b<sup>d</sup>) = O(6)</span> nodos de frontera y orden de expansión fijado por la declaración de los nodos. <strong>Por profundidad (DFS)</strong> baja hasta profundidad 6 sin retroceder; acierta con solo 10 comparaciones <em>solo si</em> la rama elegida por azar es la correcta, y con orden desfavorable mide área y perímetro antes de saber siquiera si hay un contorno cerrado. En ambos casos: sin garantía de mínimo real de comparaciones, sensible al orden, y en DFS obligada la lista de cerrados para no reabrir.</p>
+<p><strong>Pseudocódigo DFS</strong> (con retroceso por contradicción, el mínimo exigible):</p>
+<pre>DFS(n, g):
+    si G(n): devolver éxito(n)
+    si g &gt; cota o n ∈ cerrados: devolver fallo
+    cerrados ← cerrados ∪ {n}
+    para cada (d,π) ∈ A(n) en orden fijo:
+        n' ← aplicar(d,π)
+        si C(n') = ∅: continuar          // poda por contradicción
+        si DFS(n', g+1): devolver éxito(n')
+    devolver fallo</pre>
+
+<h3>3.2 Búsqueda heurística</h3>
+<p><span class="math">h(n)</span> se define sobre <strong>rasgos coincidentes pendientes</strong>, no sobre los ya medidos:</p>
+<p>Sea <span class="math">M(n)</span> el conjunto de rasgos medidos en <span class="math">n</span>, <span class="math">C(n)</span> las clases supervivientes y <span class="math">Disc(c)</span> los rasgos discriminantes de <span class="math">c</span> (<span class="math">n<sub>v</sub>, n<sub>l</sub>, Θ, Σ, κ, A, P</span>). Entonces</p>
+<p class="dm"><span class="math">Req(c,n) = Disc(c) ∖ M(n) &nbsp;&nbsp;&nbsp;&nbsp; h(n) = min<sub>c ∈ C(n)</sub> | Req(c,n) |</span></p>
+<p><strong>Ejemplo.</strong> <span class="math">M(n) = {n<sub>v</sub>=4, n<sub>l</sub>=4}</span>, <span class="math">C(n) = {Cu, Tr}</span>. Quedan por medir ángulos, simetrías, convexidad, área y perímetro en ambos casos:</p>
+<p class="dm"><span class="math">h(n) = min( |{Θ,Σ,κ,A,P}| , |{Θ,Σ,κ,A,P}| ) = 5</span></p>
+<p><strong>Ejemplo de poda.</strong> Si además <span class="math">Θ</span> ya medido da <span class="math">{90°, 90°, 90°, 60°}</span>, <span class="math">C(n) = ∅</span>, <span class="math">h = ∞</span> y la rama muere.</p>
+<p>Algoritmo: <strong>A*</strong> con <span class="math">f(n) = g(n) + h(n)</span>, frontera por prioridad de <span class="math">f</span> ascendente y lista de cerrados.</p>
+<div class="box">
+  <div class="box-t">Demostración de admisibilidad</div>
+  <ol>
+    <li>Cada acción <code>aplicar(d,π)</code> rellena <strong>exactamente una</strong> componente de <span class="math"><b>F</b></span>. Luego un camino de longitud <span class="math">k</span> desde <span class="math">n</span> puede satisfacer como mucho <span class="math">k</span> rasgos pendientes de cualquier clase.</li>
+    <li>Para confirmar <span class="math">c</span> hacen falta al menos <span class="math">|Req(c,n)|</span> acciones.</li>
+    <li>Por tanto, el coste óptimo real cumple <span class="math">h*(n) = min<sub>c∈C(n)</sub> |Req(c,n)| · 1 ≥ h(n)</span>.</li>
+  </ol>
+  <p style="margin-bottom:0"><span class="math">h</span> <strong>nunca sobreestima</strong> → es admisible → A* devuelve el camino de mínimo coste.</p>
+</div>
+<p><strong>Consistencia.</strong> Para toda arista <span class="math">(n,n')</span> de coste 1: una medición reduce en a lo sumo 1 el conteo pendiente de cada clase y la poda solo puede <em>eliminar</em> clases, lo que a lo sumo <em>eleva</em> el mínimo. Luego <span class="math">h(n) ≤ 1 + h(n')</span> → es consistente → A* es óptimo <strong>sin reaperturas</strong> y con cerrados.</p>
+<p><strong>Propiedades de coste:</strong> cálculo en <span class="math">O(|C|·|Disc|)</span>, sin procesar la imagen; solo compara conjuntos. Dominancia frente a la <span class="math">h</span> basada en el grafo de la sección 2 (arista mínima): ambas son admisibles, pero la de rasgos es mucho más informativa — la de grafo vale 6 para <span class="math">{Tr,Ti,Es,∅}</span>, mientras la de rasgos distingue dentro de ese conjunto y ordena las mediciones por cercanía real a una firma completa.</p>
+<p><strong>Aviso de no admisibilidad:</strong> si se pondera <span class="math">h</span> por el coste en tiempo de cada detector (Hough es cientos de veces más caro que contar vértices), <span class="math">h</span> deja de ser admisible salvo que se normalice por el detector más barato; con ella A* puede devolver soluciones subóptimas en comparaciones, aunque en la práctica más rápidas en reloj.</p>
+<p><strong>Traza A*</strong> (abreviada):</p>
+<table>
+  <thead><tr><th class="c">Exp.</th><th class="c">n</th><th class="c">g</th><th class="c">h</th><th class="c">f</th><th>Acción</th></tr></thead>
+  <tbody>
+    <tr><td class="c">1</td><td class="c">D</td><td class="c">0</td><td class="c">1</td><td class="c">1</td><td>medir <span class="math">n<sub>v</sub></span> → 4 (descarta Ci, Ti; sobreviven Cu, Tr, Es, ∅)</td></tr>
+    <tr><td class="c">2</td><td class="c"></td><td class="c">1</td><td class="c">1</td><td class="c">2</td><td>medir convexidad → convexo (descarta Es, ∅; sobreviven Cu, Tr)</td></tr>
+    <tr><td class="c">3</td><td class="c"></td><td class="c">2</td><td class="c">5</td><td class="c">7</td><td>medir simetrías → 4 (confirma Cu)</td></tr>
+    <tr><td class="c">—</td><td class="c">meta</td><td class="c">3</td><td class="c">0</td><td class="c">—</td><td>Cu ✓</td></tr>
+  </tbody>
+</table>
+<p>Tres comparaciones frente a las 50 de la búsqueda ciega. El orden <span class="math">n<sub>v</sub> → κ → Σ</span> es exactamente el que impone la arista mínima del grafo (<span class="math">Cu–Tr = 3</span>) y el que el MST de la sección 2 predice como óptimo.</p>
+
+<h3>3.3 Algoritmo genético</h3>
+<p><strong>Codificación.</strong> Cromosoma = permutación de los 7 detectores con su configuración:</p>
+<p class="dm"><span class="math">x = [ (simetrías, π<sub>1</sub>), (ángulos, π<sub>2</sub>), (n_vértices, π<sub>3</sub>), … ]</span></p>
+<p>El fenotipo es la <strong>batería de pruebas</strong>: el orden en que se miden los rasgos. Cada individuo define un árbol de decisión distinto.</p>
+<p><strong>Función de aptitud</strong> (a minimizar, coherente con la sección 1):</p>
+<p class="dm"><span class="math">f(x) = Σ<sub>k</sub> c<sub>k</sub>(x) + μ Σ<sub>k</sub> m<sub>k</sub>(x) + ρ · 1[ambiguo]</span></p>
+<p>con <span class="math">μ ≥ 1</span> penalización por rasgo no coincidente y <span class="math">ρ</span> penalización por terminar con <span class="math">|C| &gt; 1</span>. El óptimo conocido es 30 (coste del MST); sirve de referencia de convergencia.</p>
+<pre>P ← 60 permutaciones aleatorias de D
+repetir 200 generaciones:
+    evaluar f(x) ∀ x ∈ P
+    élite ← 2 mejores (se conservan intactos)
+    mientras |P'| &lt; 60:
+        p1 ← torneo(k=3) ; p2 ← torneo(k=3)
+        (h1, h2) ← cruce OX(p1, p2)          // preserva permutación
+        mutar(h1, p=0.15) ; mutar(h2, p=0.15) // intercambio o inserción
+        P' ← P' ∪ {h1, h2}
+    P ← élite ∪ P'
+devolver argmin f</pre>
+<ul>
+  <li><strong>Selección:</strong> torneo de tamaño 3 (presión moderada).</li>
+  <li><strong>Cruce:</strong> <em>order crossover</em> (OX), porque el cromosoma es una permutación y el cruce de un punto duplicaría detectores.</li>
+  <li><strong>Mutación:</strong> intercambio de dos posiciones, con probabilidad 0.15, para escapar de óptimos locales de orden.</li>
+  <li><strong>Elitismo:</strong> 2 individuos, para no perder el mejor hallado.</li>
+</ul>
+<p><strong>Justificación y crítica honesta.</strong> El espacio es una permutación (<span class="math">7! = 5040</span>), la aptitud es combinatoria y no separable — reordenar dos detectores cambia el coste de todo el árbol — y no hay derivada. Eso encaja con un GA. Pero con solo 7 detectores, la enumeración exhaustiva de las 5040 permutaciones tarda milisegundos y <strong>es más fiable que un GA</strong>: el GA solo se justifica cuando el conjunto de detectores y sus parámetros crece (cientos de combinaciones umbral/ROI), donde el producto cartesiano ya no es enumerable.</p>
+<p><strong>Riesgo conocido:</strong> el GA optimiza el <em>orden medio</em> sobre un conjunto de entrenamiento, no garantiza optimalidad por imagen. Su producto útil no es el clasificador final, sino la batería de pruebas que luego se congela y se usa como orden fijo de expansión en el A* de 3.2, o como semilla de la heurística.</p>
+
+<h3>3.4 Comparativa</h3>
+<table>
+  <thead><tr><th></th><th>Ciega</th><th>Heurística (A*)</th><th>Genética</th></tr></thead>
+  <tbody>
+    <tr><th>Usa rasgos para decidir</th><td>No</td><td>Sí</td><td>Sí, offline</td></tr>
+    <tr><th>Optimalidad por imagen</th><td>No (salvo coste uniforme, y aun así 50 comp.)</td><td>Sí, garantizada</td><td>No</td></tr>
+    <tr><th>Comparaciones</th><td>50</td><td>3 (traza)</td><td>~30–34 según convergencia</td></tr>
+    <tr><th>Memoria</th><td>Exponencial (BFS)</td><td>Frontera, acotada por cerrados</td><td>Población fija</td></tr>
+    <tr><th>Rol adecuado</th><td>Línea base, validación</td><td>Algoritmo de producción</td><td>Calibración previa del orden</td></tr>
+  </tbody>
+</table>
+<p><strong>Recomendación:</strong> A* con la <span class="math">h</span> de rasgos para la ejecución; el GA como fase de ajuste previa solo si el catálogo de detectores se amplía.</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Conclusiones</h2>
+<ol>
+  <li>El reconocimiento de figuras es formalizable como problema de búsqueda <span class="math">P = ⟨S, s<sub>0</sub>, A, f, G, c⟩</span> sin pérdida de rigor: estado inicial de imagen cruda, estados de interpretación parcial monótona, acciones de detección parametrizadas, meta de coincidencia dentro de tolerancia y coste aditivo por comparación y desajuste.</li>
+  <li>La estructura de similitud entre clases es explotable y cuantificable: el grafo ponderado de la sección 2 codifica el coste de discriminación, identifica el clúster crítico de cuadriláteros y fija en 30 comparaciones el óptimo de la batería completa, frente a 50 del orden fijo ingenuo.</li>
+  <li>La búsqueda ciega sirve de línea base y de validador, pero no aprovecha los pesos: todas las aristas de salida del nodo inicial empatan en 10, de modo que no puede ordenar pruebas.</li>
+  <li>La heurística de rasgos pendientes es admisible y consistente por demostración (sección 3.2), y por tanto A* con ella es óptimo: 3 comparaciones en la traza frente a 50.</li>
+  <li>El algoritmo genético es aplicable al diseño del orden de pruebas, pero con 7 detectores es superado en fiabilidad por la enumeración exhaustiva; se reserva para catálogos grandes y parametrizados.</li>
+</ol>
+
+<!-- ============ 5 ============ -->
+<h2>5. Anexos</h2>
+
+<h3>5.1 Tabla de símbolos</h3>
+<table>
+  <thead><tr><th>Símbolo</th><th>Significado</th></tr></thead>
+  <tbody>
+    <tr><td class="c">s<sub>0</sub></td><td>Estado inicial: imagen cruda, rasgos vacíos, hipótesis completa</td></tr>
+    <tr><td class="c"><b>F</b></td><td>Vector de rasgos (n<sub>v</sub>, n<sub>l</sub>, Θ, Σ, κ, A, P); ⊥ = no medido</td></tr>
+    <tr><td class="c">C</td><td>Conjunto de hipótesis supervivientes</td></tr>
+    <tr><td class="c">Δ</td><td>Detectores ya aplicados con su configuración</td></tr>
+    <tr><td class="c">G(s)</td><td>Prueba de objetivo por coincidencia de signatura dentro de ε</td></tr>
+    <tr><td class="c">g, h, f</td><td>Coste acumulado, estimación restante, f = g + h</td></tr>
+    <tr><td class="c">w(A,B)</td><td>Peso de la arista: coste de discriminación entre A y B</td></tr>
+    <tr><td class="c">μ, ρ, ε</td><td>Penalización por desajuste, por ambigüedad, tolerancia de medida</td></tr>
+    <tr><td class="c">D, Ci, Cu, Tr, Ti, Es, ∅</td><td>Desconocida, círculo, cuadrado, trapecio, triángulo, estrella, null</td></tr>
+  </tbody>
+</table>
+
+<h3>5.2 Glosario de rasgos</h3>
+<table>
+  <thead><tr><th class="c">#</th><th>Rasgo</th></tr></thead>
+  <tbody>
+    <tr><td class="c">1</td><td>Contorno cerrado</td></tr>
+    <tr><td class="c">2</td><td>Trazos rectilíneos</td></tr>
+    <tr><td class="c">3</td><td>Cuadrilátero (4 vértices)</td></tr>
+    <tr><td class="c">4</td><td>Cuatro lados</td></tr>
+    <tr><td class="c">5</td><td>Convexo</td></tr>
+    <tr><td class="c">6</td><td>Ángulos interiores iguales entre sí</td></tr>
+    <tr><td class="c">7</td><td>Simetría de orden ≥ 2</td></tr>
+    <tr><td class="c">8</td><td>Área = base × altura</td></tr>
+    <tr><td class="c">9</td><td>Perímetro = suma de lados rectos</td></tr>
+    <tr><td class="c">10</td><td>Lados de igual longitud</td></tr>
+  </tbody>
+</table>
+
+<h3>5.3 Fuente del diagrama de la figura 2</h3>
+<pre>flowchart LR
+    D(("Desconocida (inicio)"))
+    CI(("Circulo")) ; CU["Cuadrado"] ; TR["Trapecio"]
+    TI{"Triangulo"} ; ES{{"Estrella"}} ; NU[["Null (rechazo)"]]
+    D -->|10| CI ; D -->|10| CU ; D -->|10| TR
+    D -->|10| TI ; D -->|10| ES ; D -->|10| NU
+    CI ---|6| CU ; CI ---|8| TR ; CI ---|8| TI
+    CI ---|7| ES ; CI ---|10| NU
+    CU ===|3| TR ; CU ---|6| TI ; CU ---|5| ES ; CU ---|10| NU
+    TR ---|6| TI ; TR ---|6| ES ; TR ---|10| NU
+    TI ---|7| ES ; TI ---|10| NU ; ES ---|10| NU</pre>
+
+<div class="foot">
+  Documento autogenerado. Las tablas de pesos de la sección 2 se derivan de forma determinista mediante
+  w(A,B) = max(1, 10 − |ℱ<sub>A</sub> ∩ ℱ<sub>B</sub>|) sobre el catálogo del anexo 5.2, de modo que cada peso
+  es auditable rasgo a rasgo.
+</div>
+
+</body>
+</html>
